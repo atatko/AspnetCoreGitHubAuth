@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.Claims;
@@ -14,7 +15,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using Newtonsoft.Json.Linq;
+using System.Text.Json;
 
 namespace AspNetCoreGitHubAuth
 {
@@ -30,7 +31,9 @@ namespace AspNetCoreGitHubAuth
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddMvc();
+            services.AddMvc(options => {
+                options.EnableEndpointRouting = false;
+            });
 
             services.AddAuthentication(options =>
                 {
@@ -68,21 +71,26 @@ namespace AspNetCoreGitHubAuth
                             var response = await context.Backchannel.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, context.HttpContext.RequestAborted);
                             response.EnsureSuccessStatusCode();
 
-                            var user = JObject.Parse(await response.Content.ReadAsStringAsync());
+                            var user = JsonDocument.Parse(await response.Content.ReadAsStreamAsync());
 
-                            context.RunClaimActions(user);
+                            context.RunClaimActions(user.RootElement);
                         }
                     };
                 });
+
+            services.AddHttpsRedirection(options =>
+            {
+                options.RedirectStatusCode = (int)HttpStatusCode.TemporaryRedirect;
+                options.HttpsPort = 5001;
+            });
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-        public void Configure(IApplicationBuilder app, IHostingEnvironment env)
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
-            if (env.IsDevelopment())
+            if (env.EnvironmentName.Contains("Development"))
             {
                 app.UseDeveloperExceptionPage();
-                app.UseBrowserLink();
             }
             else
             {
@@ -99,6 +107,8 @@ namespace AspNetCoreGitHubAuth
                     name: "default",
                     template: "{controller}/{action=Index}/{id?}");
             });
+
+            app.UseHttpsRedirection();
         }
     }
 }
